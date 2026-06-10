@@ -15,7 +15,7 @@ from utils.helpers import dataframe_to_records, safe_float
 logger = logging.getLogger(__name__)
 
 
-DISCLAIMER = "Educational purposes only. This is not financial advice."
+
 DEFAULT_GEMINI_MODEL = "gemini-2.5-flash"
 
 
