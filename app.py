@@ -347,7 +347,7 @@ def render_dashboard_tab():
 
 
 st.title("Financial Research AI Agent")
-st.caption("Indian stock market research assistant. Educational purposes only. This is not financial advice.")
+st.caption("Indian stock market research assistant.")
 
 tabs = st.tabs(["Research", "Dashboard", "Compare", "Watchlist", "Portfolio"])
 with tabs[0]:
