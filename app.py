@@ -166,7 +166,7 @@ def render_research_tab():
         sentiment = result["sentiment"]
         history = result["history"]
 
-        st.caption("Educational purposes only. This is not financial advice.")
+    
         cols = st.columns(6)
         cols[0].metric("Current Price", format_currency(quote.get("current_price")))
         cols[1].metric("Open", format_currency(quote.get("open")))
