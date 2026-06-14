@@ -14,6 +14,12 @@ from utils.helpers import dataframe_to_records, safe_float
 
 logger = logging.getLogger(__name__)
 
+# Mandatory disclaimer used in AI summaries and reports
+DISCLAIMER = (
+    "This report is for educational and informational purposes only and does not constitute financial advice. "
+    "It should not be relied upon for investment decisions. Always perform your own due diligence and consult a licensed financial advisor before making any investment decisions. "
+    "The author/agent is not responsible for any trading or investment outcomes."
+)
 
 
 DEFAULT_GEMINI_MODEL = "gemini-2.5-flash"
@@ -190,20 +196,20 @@ Mandatory disclaimer:
             recommendation = "Exercise caution"
 
         return f"""
-### Company overview
-{symbol} is an Indian listed equity. The latest available market price is {quote.get("current_price")}.
+ ### Company overview
+ {symbol} is an Indian listed equity. The latest available market price is {quote.get("current_price")}.
 
-### Market sentiment
-Recent news sentiment is {sentiment_label}. Positive, neutral, and negative counts are {sentiment.get("sentiment_counts")}.
+ ### Market sentiment
+ Recent news sentiment is {sentiment_label}. Positive, neutral, and negative counts are {sentiment.get("sentiment_counts")}.
 
-### Technical analysis summary
-The stock is trading {trend} its 50-day simple moving average. RSI is {rsi:.2f}, and annualized volatility is approximately {volatility:.2f}%.
+ ### Technical analysis summary
+ The stock is trading {trend} its 50-day simple moving average. RSI is {rsi:.2f}, and annualized volatility is approximately {volatility:.2f}%.
 
-### Risk assessment
-Key risks include market volatility, sector-specific developments, earnings surprises, liquidity conditions, and news-driven price gaps.
+ ### Risk assessment
+ Key risks include market volatility, sector-specific developments, earnings surprises, liquidity conditions, and news-driven price gaps.
 
-### Final recommendation
-{recommendation}. Confirm with additional fundamental research and personal risk tolerance before acting.
+ ### Final recommendation
+ {recommendation}. Confirm with additional fundamental research and personal risk tolerance before acting.
 
-{DISCLAIMER}
-"""
+ {DISCLAIMER}
+ """
