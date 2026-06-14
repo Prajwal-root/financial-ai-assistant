@@ -42,3 +42,25 @@ def _safe_float(value) -> float:
     if value is None or pd.isna(value):
         return 0.0
     return float(value)
+
+
+# Added ATR helper for trade signal calculations
+def calculate_atr(data: pd.DataFrame, period: int = 14) -> pd.Series:
+    """
+    Calculate ATR (Average True Range) and return a pandas Series aligned with data.index.
+    Requires columns: High, Low, Close.
+    Uses simple moving average of True Range as an approximation for ATR.
+    """
+    if data is None or data.empty:
+        return pd.Series(dtype=float)
+    high = data["High"].astype(float)
+    low = data["Low"].astype(float)
+    close = data["Close"].astype(float)
+    prev_close = close.shift(1)
+
+    tr1 = high - low
+    tr2 = (high - prev_close).abs()
+    tr3 = (low - prev_close).abs()
+    tr = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
+    atr = tr.rolling(window=period, min_periods=1).mean()
+    return atr
