@@ -3,8 +3,12 @@ import os
 from typing import Any
 
 import pandas as pd
-from langchain_core.prompts import ChatPromptTemplate
-from langchain_google_genai import ChatGoogleGenerativeAI
+try:
+    from langchain_core.prompts import ChatPromptTemplate
+    from langchain_google_genai import ChatGoogleGenerativeAI
+    _HAS_LANGCHAIN = True
+except Exception:
+    _HAS_LANGCHAIN = False
 
 from services.news_service import NewsService
 from services.sentiment_service import SentimentService
@@ -40,6 +44,10 @@ class FinancialResearchAgent:
         self.llm = self._build_llm()
 
     def _build_llm(self):
+        # Only attempt to build an LLM if the optional langchain integrations are available
+        if not _HAS_LANGCHAIN:
+            logger.info("LangChain/Google GenAI not installed — using deterministic local summaries.")
+            return None
         api_key = os.getenv("GOOGLE_API_KEY")
         if not api_key:
             logger.warning("GOOGLE_API_KEY is not configured; using deterministic local summaries.")
@@ -200,7 +208,7 @@ Mandatory disclaimer:
  {symbol} is an Indian listed equity. The latest available market price is {quote.get("current_price")}.
 
  ### Market sentiment
- Recent news sentiment is {sentiment_label}. Positive, neutral, and negative counts are {sentiment.get("sentiment_counts")}.
+ Recent news sentiment is {sentiment_label}. Positive, neutral, and negative counts are {sentiment.get("sentiment_counts")}. 
 
  ### Technical analysis summary
  The stock is trading {trend} its 50-day simple moving average. RSI is {rsi:.2f}, and annualized volatility is approximately {volatility:.2f}%.
