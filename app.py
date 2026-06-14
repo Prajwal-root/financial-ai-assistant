@@ -17,6 +17,9 @@ from services.watchlist_service import WatchlistService
 from utils.helpers import format_currency, format_large_number, safe_float
 from utils.validations import normalize_indian_symbol, validate_symbol
 
+# Trade signal imports
+from services.trade_signal_service import TradeSignalService
+from services.db_dao import log_trade_recommendation
 
 load_dotenv()
 logging.basicConfig(
@@ -349,7 +352,8 @@ def render_dashboard_tab():
 st.title("Financial Research AI Agent")
 st.caption("Indian stock market research assistant.")
 
-tabs = st.tabs(["Research", "Dashboard", "Compare", "Watchlist", "Portfolio"])
+# Tabs: added Trade tab
+tabs = st.tabs(["Research", "Dashboard", "Compare", "Watchlist", "Portfolio", "Trade"])
 with tabs[0]:
     render_research_tab()
 with tabs[1]:
@@ -360,3 +364,47 @@ with tabs[3]:
     render_watchlist_tab()
 with tabs[4]:
     render_portfolio_tab()
+with tabs[5]:
+    # Minimal Trade tab implementation
+    st.subheader("Trade Signals")
+    tcol1, tcol2 = st.columns([2, 1])
+    symbol = tcol1.text_input("Symbol", value="RELIANCE.NS", key="trade_symbol")
+    timeframe = tcol1.selectbox("Timeframe", ["intraday", "swing", "monthly"], index=1)
+
+    ack_text = "I understand this tool provides research and not financial advice. I accept responsibility for any decisions I make."
+    acknowledged = tcol2.checkbox(ack_text, key="trade_ack")
+
+    # Disable Generate button unless acknowledged
+    generate_disabled = not acknowledged
+    if tcol2.button("Generate Signal", type="primary", disabled=generate_disabled):
+        if not acknowledged:
+            st.warning("You must acknowledge the risk statement before generating trade signals.")
+        else:
+            normalized = normalize_indian_symbol(symbol)
+            if not validate_symbol(normalized):
+                st.error("Enter a valid NSE/BSE stock symbol, for example RELIANCE.NS.")
+            else:
+                svc = TradeSignalService(services["stock"])
+                with st.spinner("Generating trade signal..."):
+                    result = svc.generate_trade_signal(normalized, timeframe=timeframe)
+                if result.get("error"):
+                    st.error(result["error"])
+                else:
+                    # Log recommendation (acknowledged)
+                    try:
+                        log_trade_recommendation(normalized, timeframe, result, acknowledged=1)
+                    except Exception:
+                        logger.exception("Failed to log trade recommendation")
+
+                    # Display results simply and clearly
+                    st.markdown(f"### Signal: **{result['signal'].upper()}**")
+                    c1, c2, c3 = st.columns(3)
+                    c1.metric("Entry", result.get("entry_price") or "N/A")
+                    c2.metric("Stop", result.get("stop_price") or "N/A")
+                    c3.metric("Targets", ", ".join([str(x) for x in result.get("targets")]) or "N/A")
+                    st.write("Confidence:")
+                    st.progress(int(result.get("confidence", 0) * 100))
+                    st.write(f"{result.get('confidence', 0) * 100:.1f}% confidence")
+                    with st.expander("Reasons / Notes"):
+                        for r in result.get("reasons", []):
+                            st.write("- " + r)
