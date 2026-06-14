@@ -74,7 +74,7 @@ def plot_stock_chart(history: pd.DataFrame, symbol: str):
             line=dict(color="#2563eb", width=2),
         )
     )
-    if "SMA_20" in history:
+    if "SMA_20" in history.columns:
         fig.add_trace(
             go.Scatter(
                 x=history.index,
@@ -84,7 +84,7 @@ def plot_stock_chart(history: pd.DataFrame, symbol: str):
                 line=dict(color="#16a34a", width=1.5),
             )
         )
-    if "SMA_50" in history:
+    if "SMA_50" in history.columns:
         fig.add_trace(
             go.Scatter(
                 x=history.index,
@@ -106,6 +106,8 @@ def plot_stock_chart(history: pd.DataFrame, symbol: str):
 
 
 def plot_rsi(history: pd.DataFrame, symbol: str):
+    if "RSI" not in history.columns:
+        return
     fig = go.Figure()
     fig.add_trace(
         go.Scatter(
@@ -157,19 +159,18 @@ def render_research_tab():
         with st.spinner("Fetching market data, news, indicators, and AI summary..."):
             result = services["agent"].research_stock(normalized, period=period)
         if result.get("error"):
-            st.error(result["error")
+            st.error(result["error"])
             return
         st.session_state["latest_research"] = result
 
     result = st.session_state.get("latest_research")
     if result:
         normalized = result["symbol"]
-        quote = result["quote"]
-        indicators = result["indicators"]
-        sentiment = result["sentiment"]
-        history = result["history"]
+        quote = result.get("quote", {})
+        indicators = result.get("indicators", {})
+        sentiment = result.get("sentiment", {})
+        history = result.get("history", pd.DataFrame())
 
-    
         cols = st.columns(6)
         cols[0].metric("Current Price", format_currency(quote.get("current_price")))
         cols[1].metric("Open", format_currency(quote.get("open")))
@@ -180,15 +181,16 @@ def render_research_tab():
 
         chart_col, sentiment_col = st.columns([2, 1])
         with chart_col:
-            plot_stock_chart(history, normalized)
-            plot_rsi(history, normalized)
+            if not history.empty:
+                plot_stock_chart(history, normalized)
+                plot_rsi(history, normalized)
         with sentiment_col:
             render_sentiment(sentiment)
             st.write("Technical Snapshot")
             st.dataframe(pd.DataFrame([indicators]).T.rename(columns={0: "Value"}), use_container_width=True)
 
         st.write("AI Research Report")
-        st.markdown(result["ai_summary"])
+        st.markdown(result.get("ai_summary", ""))
 
         if st.button("Export PDF Report"):
             report_path = services["report"].create_stock_report(result)
@@ -217,12 +219,14 @@ def render_comparison_tab():
         with st.spinner("Comparing stocks..."):
             comparison = services["agent"].compare_stocks(symbol_a, symbol_b)
         if comparison.get("error"):
-            st.error(comparison["error")
+            st.error(comparison["error"])
             return
-        st.dataframe(comparison["table"], use_container_width=True)
+        st.dataframe(comparison.get("table", pd.DataFrame()), use_container_width=True)
 
         fig = go.Figure()
-        for symbol, history in comparison["histories"].items():
+        for symbol, history in comparison.get("histories", {}).items():
+            if history is None or history.empty:
+                continue
             normalized_close = history["Close"] / history["Close"].iloc[0] * 100
             fig.add_trace(go.Scatter(x=history.index, y=normalized_close, mode="lines", name=symbol))
         fig.update_layout(
@@ -247,6 +251,220 @@ def render_watchlist_tab():
         else:
             st.error("Invalid symbol.")
 
+    watchlist = services["watchlist"].list_stocks()
+    if not watchlist:
+        st.info("Your watchlist is empty.")
+        return
+
+    rows = []
+    for item in watchlist:
+        try:
+            quote = services["stock"].get_quote(item.symbol)
+        except RuntimeError:
+            quote = {"current_price": None, "change_percent": None, "volume": None}
+        rows.append(
+            {
+                "Symbol": item.symbol,
+                "Current Price": quote.get("current_price"),
+                "Change %": quote.get("change_percent"),
+                "Volume": quote.get("volume"),
+            }
+        )
+    st.dataframe(pd.DataFrame(rows), use_container_width=True)
+    remove_symbol = st.selectbox("Remove stock", [item.symbol for item in watchlist])
+    if st.button("Remove"):
+        services["watchlist"].remove_stock(remove_symbol)
+        st.success(f"Removed {remove_symbol}")
+        st.rerun()
 
 
-{
+def render_portfolio_tab():
+    st.subheader("Portfolio Tracker")
+    with st.form("portfolio_form", clear_on_submit=True):
+        cols = st.columns(3)
+        symbol = cols[0].text_input("Stock", value="HDFCBANK.NS")
+        quantity = cols[1].number_input("Quantity", min_value=0.0, value=10.0, step=1.0)
+        purchase_price = cols[2].number_input("Purchase Price", min_value=0.0, value=1500.0, step=1.0)
+        submitted = st.form_submit_button("Add Holding")
+    if submitted:
+        normalized = normalize_indian_symbol(symbol)
+        if validate_symbol(normalized) and quantity > 0 and purchase_price > 0:
+            services["portfolio"].add_holding(normalized, quantity, purchase_price)
+            st.success(f"Added {normalized}")
+        else:
+            st.error("Enter a valid symbol, quantity, and purchase price.")
+
+    try:
+        holdings = services["portfolio"].get_portfolio_summary()
+    except RuntimeError as exc:
+        st.error(str(exc))
+        return
+    if holdings.empty:
+        st.info("No portfolio holdings yet.")
+        return
+    st.dataframe(holdings, use_container_width=True)
+    totals = services["portfolio"].calculate_totals(holdings)
+    cols = st.columns(3)
+    cols[0].metric("Investment Value", format_currency(totals["investment_value"]))
+    cols[1].metric("Current Value", format_currency(totals["current_value"]))
+    cols[2].metric("Profit/Loss", format_currency(totals["profit_loss"]), f"{totals['profit_loss_percent']:.2f}%")
+
+    remove_options = holdings["Symbol"].tolist()
+    remove_symbol = st.selectbox("Remove holding", remove_options)
+    if st.button("Delete Holding"):
+        services["portfolio"].remove_holding(remove_symbol)
+        st.success(f"Removed {remove_symbol}")
+        st.rerun()
+
+
+def render_dashboard_tab():
+    st.subheader("Stock Dashboard")
+    symbol = normalize_indian_symbol(st.text_input("Dashboard symbol", value="TCS.NS"))
+    if st.button("Load Dashboard", type="primary"):
+        if not validate_symbol(symbol):
+            st.error("Enter a valid NSE/BSE symbol.")
+            return
+        try:
+            history = services["stock"].get_history(symbol, period="1y")
+            if history.empty:
+                st.error(
+                    "Market data is temporarily unavailable for this symbol. "
+                    "Yahoo Finance may be rate-limiting requests. Wait a minute and try again."
+                )
+                return
+            quote = services["stock"].get_quote(symbol, history=history.tail(5))
+            indicators = services["stock"].get_technical_indicators(history)
+        except (RuntimeError, ValueError) as exc:
+            st.error(
+                f"{exc}. This usually means Yahoo Finance is temporarily rate-limiting requests. "
+                "Wait a minute and try again."
+            )
+            return
+        history = history.assign(**{k: v for k, v in indicators.get("series", {}).items()})
+
+        cols = st.columns(6)
+        cols[0].metric("Current Price", format_currency(quote.get("current_price")))
+        cols[1].metric("Open", format_currency(quote.get("open")))
+        cols[2].metric("High", format_currency(quote.get("day_high")))
+        cols[3].metric("Low", format_currency(quote.get("day_low")))
+        cols[4].metric("Volume", format_large_number(quote.get("volume")))
+        cols[5].metric("Market Cap", format_large_number(quote.get("market_cap")))
+        plot_stock_chart(history, symbol)
+        plot_rsi(history, symbol)
+
+
+def render_audit_tab(limit: int = 50):
+    import json
+    import sqlite3
+
+    st.subheader("Trade Recommendations Audit")
+    db_path = "data/financial_research.db"
+    try:
+        conn = sqlite3.connect(db_path)
+        cur = conn.cursor()
+        cur.execute(
+            "SELECT id, symbol, timeframe, acknowledged, created_at, recommendation FROM trade_recommendations ORDER BY id DESC LIMIT ?",
+            (limit,),
+        )
+        rows = cur.fetchall()
+    except Exception as exc:
+        st.error(f"Failed to read DB: {exc}")
+        return
+
+    if not rows:
+        st.info("No trade recommendations found.")
+        return
+
+    cols = st.columns([1, 1, 1, 1, 2])
+    cols[0].markdown("**ID**")
+    cols[1].markdown("**Symbol**")
+    cols[2].markdown("**Timeframe**")
+    cols[3].markdown("**Ack**")
+    cols[4].markdown("**Timestamp & Signal**")
+
+    for r in rows:
+        rid, symbol, timeframe, acknowledged, created_at, recommendation_json = r
+        try:
+            rec = json.loads(recommendation_json) if recommendation_json else {}
+        except Exception:
+            rec = {"raw": recommendation_json}
+
+        row_cols = st.columns([1, 1, 1, 1, 2])
+        row_cols[0].write(rid)
+        row_cols[1].write(symbol)
+        row_cols[2].write(timeframe)
+        row_cols[3].write("Yes" if acknowledged else "No")
+        ts = created_at if created_at else rec.get("timestamp_utc", "")
+        sig = rec.get("signal", "")
+        entry = rec.get("entry_price", "N/A")
+        conf = rec.get("confidence", 0)
+        row_cols[4].write(f"{ts}\nSignal: {sig} • Entry: {entry} • Conf: {conf:.2f}")
+
+    st.markdown("---")
+    if st.button("Show full JSON of last 5"):
+        for r in rows[:5]:
+            rid = r[0]
+            rec_json = r[5]
+            st.code(rec_json)
+
+
+st.title("Financial Research AI Agent")
+st.caption("Indian stock market research assistant.")
+
+tabs = st.tabs(["Research", "Dashboard", "Compare", "Watchlist", "Portfolio", "Trade", "Admin"]) 
+with tabs[0]:
+    render_research_tab()
+with tabs[1]:
+    render_dashboard_tab()
+with tabs[2]:
+    render_comparison_tab()
+with tabs[3]:
+    render_watchlist_tab()
+with tabs[4]:
+    render_portfolio_tab()
+with tabs[5]:
+    # Minimal Trade tab implementation
+    st.subheader("Trade Signals")
+    tcol1, tcol2 = st.columns([2, 1])
+    symbol = tcol1.text_input("Symbol", value="RELIANCE.NS", key="trade_symbol")
+    timeframe = tcol1.selectbox("Timeframe", ["intraday", "swing", "monthly"], index=1)
+
+    ack_text = "I understand this tool provides research and not financial advice. I accept responsibility for any decisions I make."
+    acknowledged = tcol2.checkbox(ack_text, key="trade_ack")
+
+    # Disable Generate button unless acknowledged
+    generate_disabled = not acknowledged
+    if tcol2.button("Generate Signal", type="primary", disabled=generate_disabled):
+        if not acknowledged:
+            st.warning("You must acknowledge the risk statement before generating trade signals.")
+        else:
+            normalized = normalize_indian_symbol(symbol)
+            if not validate_symbol(normalized):
+                st.error("Enter a valid NSE/BSE stock symbol, for example RELIANCE.NS.")
+            else:
+                svc = TradeSignalService(services["stock"])
+                with st.spinner("Generating trade signal..."):
+                    result = svc.generate_trade_signal(normalized, timeframe=timeframe)
+                if result.get("error"):
+                    st.error(result["error"]) 
+                else:
+                    # Log recommendation (acknowledged)
+                    try:
+                        log_trade_recommendation(normalized, timeframe, result, acknowledged=1)
+                    except Exception:
+                        logger.exception("Failed to log trade recommendation")
+
+                    # Display results simply and clearly
+                    st.markdown(f"### Signal: **{result['signal'].upper()}**")
+                    c1, c2, c3 = st.columns(3)
+                    c1.metric("Entry", result.get("entry_price") or "N/A")
+                    c2.metric("Stop", result.get("stop_price") or "N/A")
+                    c3.metric("Targets", ", ".join([str(x) for x in result.get("targets")]) or "N/A")
+                    st.write("Confidence:")
+                    st.progress(int(result.get("confidence", 0) * 100))
+                    st.write(f"{result.get('confidence', 0) * 100:.1f}% confidence")
+                    with st.expander("Reasons / Notes"):
+                        for r in result.get("reasons", []):
+                            st.write("- " + r)
+with tabs[6]:
+    render_audit_tab()
