@@ -5,7 +5,16 @@ from typing import Any
 
 from fpdf import FPDF
 
-from agents.financial_agent import DISCLAIMER
+# Try to import DISCLAIMER from agents.financial_agent, but fall back to a local copy
+try:
+    from agents.financial_agent import DISCLAIMER
+except Exception:
+    DISCLAIMER = (
+        "This report is for educational and informational purposes only and does not constitute financial advice. "
+        "It should not be relied upon for investment decisions. Always perform your own due diligence and consult a licensed financial advisor before making any investment decisions. "
+        "The author/agent is not responsible for any trading or investment outcomes."
+    )
+
 from utils.helpers import clean_text_for_pdf, format_currency, format_large_number
 
 
